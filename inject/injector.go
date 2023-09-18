@@ -11,15 +11,26 @@ type Creator[T any] func(injector *Injector) (T, error)
 type Module func(injector *Injector) error
 
 type Injector struct {
-	bindings map[string]Creator[any]
-	types    map[reflect.Type]Creator[any]
+	// staticBindings and staticTypes are used to store bindings and types for static values.
+	staticBindings map[string]interface{}
+	staticTypes    map[reflect.Type]interface{}
+
+	// functionBindings and functionTypes are used to store bindings and types for functions.
+	functionBindings map[string]Creator[any]
+	functionTypes    map[reflect.Type]Creator[any]
 }
 
 func NewInjector() *Injector {
 	return &Injector{
-		bindings: make(map[string]Creator[any]),
-		types:    make(map[reflect.Type]Creator[any]),
+		staticTypes:      make(map[reflect.Type]interface{}),
+		staticBindings:   make(map[string]interface{}),
+		functionBindings: make(map[string]Creator[any]),
+		functionTypes:    make(map[reflect.Type]Creator[any]),
 	}
+}
+
+func (i *Injector) Install(module Module) error {
+	return module(i)
 }
 
 func (i *Injector) Inject(injectee interface{}) error {
@@ -28,16 +39,15 @@ func (i *Injector) Inject(injectee interface{}) error {
 		panic("Inject value must be a pointer")
 	}
 
-	t := ptr.Elem()
-	if creator, ok := i.types[t]; ok {
-		value, err := creator(i)
+	t, v := ptr.Elem(), reflect.ValueOf(injectee).Elem()
+	if ok := i.HasType(t); ok {
+		value, err := i.GetType(t)
 		if err != nil {
 			return errors.Wrap(err, "Failed to create value")
 		}
-		reflect.ValueOf(injectee).Elem().Set(reflect.ValueOf(value))
+		v.Set(reflect.ValueOf(value))
 		return nil
 	}
-	v := reflect.ValueOf(injectee).Elem()
 
 	if t.Kind() == reflect.Struct {
 		// We can try and inject the fields of the struct, but can't do that with any other kind of type.
@@ -57,16 +67,12 @@ func (i *Injector) Inject(injectee interface{}) error {
 					continue
 				}
 
-				if creator, ok := i.bindings[inject]; ok {
-					value, err := creator(i)
-					if err != nil {
-						return errors.Wrap(err, "Failed to create value")
-					}
-					fieldValue.Set(reflect.ValueOf(value))
-					continue
-				} else {
-					return errors.Newf(nil, errors.ErrorCodeUnknown, "No binding found for %s", inject)
+				value, err := i.Get(inject)
+				if err != nil {
+					return errors.Wrap(err, "Failed to create value")
 				}
+				fieldValue.Set(reflect.ValueOf(value))
+				continue
 			}
 
 			// Second, if the field doesn't have a tag, we can try and inject it by type
@@ -76,14 +82,15 @@ func (i *Injector) Inject(injectee interface{}) error {
 					return errors.Wrapf(err, "Failed to inject field %s", fieldType.Name)
 				}
 				fieldValue.Set(value)
+				continue
 			} else {
 				value := reflect.New(fieldType.Type)
 				if err := i.Inject(value.Interface()); err != nil {
 					return errors.Wrapf(err, "Failed to inject field %s", fieldType.Name)
 				}
 				fieldValue.Set(value.Elem())
+				continue
 			}
-
 		}
 
 		return nil
@@ -93,10 +100,23 @@ func (i *Injector) Inject(injectee interface{}) error {
 }
 
 func (i *Injector) Get(identifier string) (interface{}, error) {
-	if creator, ok := i.bindings[identifier]; ok {
+	if creator, ok := i.functionBindings[identifier]; ok {
 		return creator(i)
 	}
+	if value, ok := i.staticBindings[identifier]; ok {
+		return value, nil
+	}
 	return nil, errors.Newf(nil, errors.ErrorCodeUnknown, "No binding found for %s", identifier)
+}
+
+func (i *Injector) Has(identifier string) bool {
+	if _, ok := i.functionBindings[identifier]; ok {
+		return true
+	}
+	if _, ok := i.staticBindings[identifier]; ok {
+		return true
+	}
+	return false
 }
 
 func (i *Injector) GetUnsafe(identifier string) interface{} {
@@ -108,10 +128,23 @@ func (i *Injector) GetUnsafe(identifier string) interface{} {
 }
 
 func (i *Injector) GetType(ty reflect.Type) (interface{}, error) {
-	if creator, ok := i.types[ty]; ok {
+	if creator, ok := i.functionTypes[ty]; ok {
 		return creator(i)
 	}
+	if value, ok := i.staticTypes[ty]; ok {
+		return value, nil
+	}
 	return nil, errors.Newf(nil, errors.ErrorCodeUnknown, "No binding found for %s", ty)
+}
+
+func (i *Injector) HasType(ty reflect.Type) bool {
+	if _, ok := i.functionTypes[ty]; ok {
+		return true
+	}
+	if _, ok := i.staticTypes[ty]; ok {
+		return true
+	}
+	return false
 }
 
 func (i *Injector) GetTypeUnsafe(ty reflect.Type) interface{} {
@@ -120,48 +153,4 @@ func (i *Injector) GetTypeUnsafe(ty reflect.Type) interface{} {
 		panic(err)
 	}
 	return value
-}
-
-func (i *Injector) Bind(identifier string, creator Creator[any]) error {
-	if _, ok := i.bindings[identifier]; ok {
-		return errors.Newf(nil, errors.ErrorCodeUnknown, "Binding already exists for %s", identifier)
-	}
-	i.bindings[identifier] = creator
-	return nil
-}
-
-func (i *Injector) BindUnsafe(identifier string, creator Creator[any]) {
-	if err := i.Bind(identifier, creator); err != nil {
-		panic(err)
-	}
-}
-
-func Bind[T any](injector *Injector, creator Creator[T]) error {
-	return injector.bindType(reflect.TypeOf(creator).Out(0), func(injector *Injector) (any, error) {
-		return creator(injector)
-	})
-}
-
-func BindUnsafe[T any](injector *Injector, creator Creator[T]) {
-	if err := Bind(injector, creator); err != nil {
-		panic(err)
-	}
-}
-
-func (i *Injector) bindType(ty reflect.Type, creator Creator[any]) error {
-	if _, ok := i.types[ty]; ok {
-		return errors.Newf(nil, errors.ErrorCodeUnknown, "Binding already exists for %s", ty)
-	}
-	i.types[ty] = creator
-	return nil
-}
-
-func (i *Injector) bindTypeUnsafe(ty reflect.Type, creator Creator[any]) {
-	if err := i.bindType(ty, creator); err != nil {
-		panic(err)
-	}
-}
-
-func (i *Injector) Install(module Module) error {
-	return module(i)
 }

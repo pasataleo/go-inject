@@ -23,42 +23,35 @@ type TestStruct struct {
 	StructPtr *NestedTestStruct
 }
 
+func createBool(_ *Injector) (bool, error) {
+	return true, nil
+}
+
+func createInt(value int) Creator[int] {
+	return func(injector *Injector) (int, error) {
+		return value, nil
+	}
+}
+
 func TestInjector_Inject(t *testing.T) {
 	injector := NewInjector()
 
-	BindUnsafe(injector, func(injector *Injector) (bool, error) {
-		return true, nil
-	})
-	BindUnsafe(injector, func(injector *Injector) (int, error) {
-		return 42, nil
-	})
-	BindUnsafe(injector, func(injector *Injector) (string, error) {
-		return "string", nil
-	})
+	BindFn(createBool).ToUnsafe(injector)
+	BindFn(createInt(42)).ToUnsafe(injector)
+	BindValue("string").ToUnsafe(injector)
 
-	injector.BindUnsafe("boolean", func(injector *Injector) (interface{}, error) {
-		return false, nil
-	})
-	injector.BindUnsafe("integer", func(injector *Injector) (interface{}, error) {
-		return 33, nil
-	})
-
-	tests.ExecFn(t, injector.Bind, "boolean", func(injector *Injector) (interface{}, error) {
-		return false, nil
-	}).NoError()
-	tests.ExecFn(t, injector.Bind, "integer", func(injector *Injector) (interface{}, error) {
-		return 33, nil
-	}).NoError()
+	BindValue(false).ToUnsafe(injector, "boolean")
+	BindFn(createInt(33)).ToUnsafe(injector, "integer")
 
 	var value TestStruct
 	tests.ExecFn(t, injector.Inject, &value).NoError()
-	tests.Equals(t, true, value.Bool)
-	tests.Equals(t, 42, value.Int)
-	tests.Equals(t, "string", value.String)
-	tests.Equals(t, false, value.Struct.Bool)
-	tests.Equals(t, 33, value.Struct.Int)
-	tests.Equals(t, "", value.Struct.String)
-	tests.Equals(t, false, value.StructPtr.Bool)
-	tests.Equals(t, 33, value.StructPtr.Int)
-	tests.Equals(t, "", value.StructPtr.String)
+	tests.Value(t, value.Bool).True()
+	tests.Value(t, value.Int).Equals(42)
+	tests.Value(t, value.String).Equals("string")
+	tests.Value(t, value.Struct.Bool).False()
+	tests.Value(t, value.Struct.Int).Equals(33)
+	tests.Value(t, value.Struct.String).Empty()
+	tests.Value(t, value.StructPtr.Bool).False()
+	tests.Value(t, value.StructPtr.Int).Equals(33)
+	tests.Value(t, value.StructPtr.String).Empty()
 }
