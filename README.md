@@ -63,7 +63,7 @@ type MyStruct struct {
 }
 
 func main() {
-	injector := inject.NewInjector()
+    injector := inject.NewInjector()
     inject.BindFn[string](func(_ *inject.Injector) (string, error) {
         return "Hello World", nil
     }).ToUnsafe(injector, "value") // Anything tagged as "value" will be injected with "Hello World".
