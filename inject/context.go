@@ -79,3 +79,29 @@ func (c *functionContext[T]) ToUnsafe(injector *Injector, args ...string) {
 		panic(err)
 	}
 }
+
+type parserContext[T any] struct {
+	parser Parser[T]
+}
+
+func (c *parserContext[T]) To(injector *Injector, args ...string) error {
+	if len(args) == 0 {
+		return errors.Newf(nil, errors.ErrorCodeUnknown, "Parser requires at least one argument")
+	}
+	for _, arg := range args {
+		if injector.Has(arg) {
+			return errors.Newf(nil, errors.ErrorCodeUnknown, "Binding already exists for %s", arg)
+		}
+
+		injector.parsers[arg] = func(values []string) (any, error) {
+			return c.parser(values)
+		}
+	}
+	return nil
+}
+
+func (c *parserContext[T]) ToUnsafe(injector *Injector, args ...string) {
+	if err := c.To(injector, args...); err != nil {
+		panic(err)
+	}
+}

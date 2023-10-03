@@ -8,16 +8,23 @@ import (
 
 type Creator[T any] func(injector *Injector) (T, error)
 
+type Parser[T any] func(values []string) (T, error)
+
 type Module func(injector *Injector) error
 
 type Injector struct {
-	// staticBindings and staticTypes are used to store bindings and types for static values.
+	// staticBindings and staticTypes are used to store bindings and types for
+	// static values.
 	staticBindings map[string]interface{}
 	staticTypes    map[reflect.Type]interface{}
 
-	// functionBindings and functionTypes are used to store bindings and types for functions.
+	// functionBindings and functionTypes are used to store bindings and types
+	// for functions.
 	functionBindings map[string]Creator[any]
 	functionTypes    map[reflect.Type]Creator[any]
+
+	// parsers map flag names and environment variables to parser functions.
+	parsers map[string]Parser[any]
 }
 
 func NewInjector() *Injector {
@@ -26,6 +33,7 @@ func NewInjector() *Injector {
 		staticBindings:   make(map[string]interface{}),
 		functionBindings: make(map[string]Creator[any]),
 		functionTypes:    make(map[reflect.Type]Creator[any]),
+		parsers:          make(map[string]Parser[any]),
 	}
 }
 
@@ -114,6 +122,9 @@ func (i *Injector) Has(identifier string) bool {
 		return true
 	}
 	if _, ok := i.staticBindings[identifier]; ok {
+		return true
+	}
+	if _, ok := i.parsers[identifier]; ok {
 		return true
 	}
 	return false
