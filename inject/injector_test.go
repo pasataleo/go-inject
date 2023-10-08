@@ -56,9 +56,3 @@ func TestInjector_Inject(t *testing.T) {
 	tests.Value(t, value.StructPtr.Int).Equals(33)
 	tests.Value(t, value.StructPtr.String).Empty()
 }
-
-func TestInjector_InjectSkipUntaggedFields(t *testing.T) {
-	injector := NewInjector()
-
-	var value TestStruct
-}
