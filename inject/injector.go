@@ -67,12 +67,23 @@ func (i *Injector) Inject(injectee interface{}) error {
 					continue
 				}
 
-				value, err := i.Get(inject)
-				if err != nil {
-					return errors.Wrap(err, "Failed to create value")
+				tag := parseTags(inject)
+
+				if i.Has(tag.key) {
+					value, err := i.Get(tag.key)
+					if err != nil {
+						return errors.Wrap(err, "Failed to create value")
+					}
+					fieldValue.Set(reflect.ValueOf(value))
+					continue
 				}
-				fieldValue.Set(reflect.ValueOf(value))
-				continue
+
+				if tag.optional {
+					// Then it's fine, we just won't set a value for the field.
+					continue
+				} else {
+					return errors.Newf(nil, errors.ErrorCodeUnknown, "Missing binding for %s", tag.key)
+				}
 			}
 
 			// Second, if the field doesn't have a tag, we can try and inject it by type

@@ -7,8 +7,9 @@ import (
 )
 
 type NestedTestStruct struct {
-	Bool bool `inject:"boolean"`
-	Int  int  `inject:"integer"`
+	Bool     bool   `inject:"boolean"`
+	Int      int    `inject:"integer"`
+	Optional string `inject:"string;optional"`
 
 	// This field will not be injected
 	String string `inject:"-"`
@@ -44,7 +45,7 @@ func TestInjector_Inject(t *testing.T) {
 	BindFn(createInt(33)).ToUnsafe(injector, "integer")
 
 	var value TestStruct
-	tests.ExecFn(t, injector.Inject, &value).NoError()
+	tests.ExecFn(t, injector.Inject, &value).Fatal().NoError()
 	tests.Value(t, value.Bool).True()
 	tests.Value(t, value.Int).Equals(42)
 	tests.Value(t, value.String).Equals("string")
@@ -54,4 +55,10 @@ func TestInjector_Inject(t *testing.T) {
 	tests.Value(t, value.StructPtr.Bool).False()
 	tests.Value(t, value.StructPtr.Int).Equals(33)
 	tests.Value(t, value.StructPtr.String).Empty()
+}
+
+func TestInjector_InjectSkipUntaggedFields(t *testing.T) {
+	injector := NewInjector()
+
+	var value TestStruct
 }
