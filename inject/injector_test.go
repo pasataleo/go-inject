@@ -37,22 +37,42 @@ func createInt(value int) Creator[int] {
 func TestInjector_Inject(t *testing.T) {
 	injector := NewInjector()
 
-	BindFn(createBool).ToUnsafe(injector)
-	BindFn(createInt(42)).ToUnsafe(injector)
-	BindValue("string").ToUnsafe(injector)
+	// First, all un-named boolean fields will be created
+	// by the createBool function.
+	BindFn(createBool).To(injector)
 
-	BindValue(false).ToUnsafe(injector, "boolean")
-	BindFn(createInt(33)).ToUnsafe(injector, "integer")
+	// Then, all un-named integer fields will be created
+	// by the createInt function.
+	BindFn(createInt(42)).To(injector)
+
+	// Finally, all un-named string fields will be assigned
+	// the value "string".
+	BindValue("string").To(injector)
+
+	// Now, we'll create some specific bindings.
+
+	// First, any field with the tag "boolean" will be set to false.
+	BindValue(false).To(injector, "boolean")
+
+	// Then, any field with the tag "integer" will be set to 33.
+	BindFn(createInt(33)).To(injector, "integer")
 
 	var value TestStruct
-	tests.ExecFn(t, injector.Inject, &value).Fatal().NoError()
-	tests.Value(t, value.Bool).True()
-	tests.Value(t, value.Int).Equals(42)
-	tests.Value(t, value.String).Equals("string")
-	tests.Value(t, value.Struct.Bool).False()
-	tests.Value(t, value.Struct.Int).Equals(33)
-	tests.Value(t, value.Struct.String).Empty()
-	tests.Value(t, value.StructPtr.Bool).False()
-	tests.Value(t, value.StructPtr.Int).Equals(33)
-	tests.Value(t, value.StructPtr.String).Empty()
+	tests.ExecuteE(injector.Inject(&value)).NoError(t)
+
+	tests.Execute(value.Bool).Equal(t, true)
+	tests.Execute(value.Int).Equal(t, 42)
+	tests.Execute(value.String).Equal(t, "string")
+
+	// The two nested structs should have the same values.
+
+	tests.Execute(value.Struct.Bool).Equal(t, false)
+	tests.Execute(value.Struct.Int).Equal(t, 33)
+	tests.Execute(value.Struct.String).Equal(t, "")
+	tests.Execute(value.Struct.Optional).Equal(t, "")
+
+	tests.Execute(value.StructPtr.Bool).Equal(t, false)
+	tests.Execute(value.StructPtr.Int).Equal(t, 33)
+	tests.Execute(value.StructPtr.String).Equal(t, "")
+	tests.Execute(value.StructPtr.Optional).Equal(t, "")
 }

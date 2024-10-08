@@ -8,8 +8,6 @@ import (
 
 type Creator[T any] func(injector *Injector) (T, error)
 
-type Module func(injector *Injector) error
-
 type Injector struct {
 	// staticBindings and staticTypes are used to store bindings and types for static values.
 	staticBindings map[string]interface{}
@@ -27,10 +25,6 @@ func NewInjector() *Injector {
 		functionBindings: make(map[string]Creator[any]),
 		functionTypes:    make(map[reflect.Type]Creator[any]),
 	}
-}
-
-func (i *Injector) Install(module Module) error {
-	return module(i)
 }
 
 func (i *Injector) Inject(injectee interface{}) error {
@@ -87,20 +81,36 @@ func (i *Injector) Inject(injectee interface{}) error {
 			}
 
 			// Second, if the field doesn't have a tag, we can try and inject it by type
-			if fieldType.Type.Kind() == reflect.Ptr {
+			if i.HasType(fieldType.Type) {
+				value, err := i.GetType(fieldType.Type)
+				if err != nil {
+					return errors.Wrapf(err, "Failed to inject field %s", fieldType.Name)
+				}
+				fieldValue.Set(reflect.ValueOf(value))
+				continue
+			} else if fieldType.Type.Kind() == reflect.Ptr && i.HasType(fieldType.Type.Elem()) {
+				// If the field is a pointer, we can try and inject it by the underlying type.
+				value, err := i.GetType(fieldType.Type.Elem())
+				if err != nil {
+					return errors.Wrapf(err, "Failed to inject field %s", fieldType.Name)
+				}
+				fieldValue.Set(reflect.ValueOf(value))
+				continue
+			}
+
+			// Finally, if all else has failed and the type is a structure or a pointer to a structure, we can try and
+			// inject the fields into the structure recursively.
+			if fieldType.Type.Kind() == reflect.Struct {
+				if err := i.Inject(fieldValue.Addr().Interface()); err != nil {
+					return errors.Wrapf(err, "Failed to inject field %s", fieldType.Name)
+				}
+				continue
+			} else if fieldType.Type.Kind() == reflect.Ptr && fieldType.Type.Elem().Kind() == reflect.Struct {
 				value := reflect.New(fieldType.Type.Elem())
 				if err := i.Inject(value.Interface()); err != nil {
 					return errors.Wrapf(err, "Failed to inject field %s", fieldType.Name)
 				}
 				fieldValue.Set(value)
-				continue
-			} else {
-				value := reflect.New(fieldType.Type)
-				if err := i.Inject(value.Interface()); err != nil {
-					return errors.Wrapf(err, "Failed to inject field %s", fieldType.Name)
-				}
-				fieldValue.Set(value.Elem())
-				continue
 			}
 		}
 
