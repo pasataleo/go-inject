@@ -76,3 +76,14 @@ func TestInjector_Inject(t *testing.T) {
 	tests.Execute(value.StructPtr.String).Equal(t, "")
 	tests.Execute(value.StructPtr.Optional).Equal(t, "")
 }
+
+func TestInjector_Direct(t *testing.T) {
+	injector := NewInjector()
+
+	tests.ExecuteE(Binder[bool](injector, "boolean")("irrelevant", true)).NoError(t)
+	tests.ExecuteE(DirectBinder[bool](injector)("relevant", true)).NoError(t)
+
+	tests.Execute2E(injector.Get("boolean")).NoError(t).Equal(t, true)
+	tests.Execute2E(injector.Get("relevant")).NoError(t).Equal(t, true)
+	tests.Execute(injector.Has("irrelevant")).Equal(t, false)
+}

@@ -11,6 +11,7 @@ var (
 	_ Context = (*functionContext[any])(nil)
 )
 
+// Context is an interface that allows for the creation of bindings in an injector.
 type Context interface {
 	ToSafe(injector *Injector, args ...string) error
 	To(injector *Injector, args ...string)
